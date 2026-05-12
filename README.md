@@ -428,7 +428,292 @@ Gateway se verify:
 - Issuer: `http://localhost:8080/realms/DOAN`.
 - Role `admin` cho endpoint `/api/admin`.
 
-## 14. Trang Thai Kubernetes
+## 14. Trien Khai Gateway
+
+Phan gateway hien nam trong:
+
+```text
+backend/server.js
+```
+
+Gateway dung:
+
+- `express`: tao API.
+- `cors`: cho phep client goi API.
+- `helmet`: them cac HTTP security headers co ban.
+- `jose`: verify JWT bang JWKS cua Keycloak.
+
+Dependencies trong `backend/package.json`:
+
+```json
+{
+  "cors": "^2.8.6",
+  "express": "^4.18.2",
+  "helmet": "^8.1.0",
+  "jose": "^6.2.3"
+}
+```
+
+### 14.1. Cau Hinh Gateway Trong Docker Compose
+
+Service gateway la `backend` trong `docker-compose.yml`:
+
+```yaml
+backend:
+  image: node:18-alpine
+  container_name: backend-api
+  working_dir: /app
+  volumes:
+    - ./backend:/app
+  command: sh -c "npm install && node server.js"
+  ports:
+    - "3000:3000"
+  environment:
+    KEYCLOAK_ISSUER: http://localhost:8080/realms/DOAN
+    KEYCLOAK_JWKS_URI: http://keycloak:8080/realms/DOAN/protocol/openid-connect/certs
+  networks:
+    - public
+```
+
+Co 2 URL Keycloak can phan biet:
+
+| Bien | Gia tri | Ly do |
+| --- | --- | --- |
+| `KEYCLOAK_ISSUER` | `http://localhost:8080/realms/DOAN` | Phai khop voi `iss` trong token ma browser/PowerShell nhan duoc |
+| `KEYCLOAK_JWKS_URI` | `http://keycloak:8080/realms/DOAN/protocol/openid-connect/certs` | Backend chay trong Docker nen goi Keycloak bang service name `keycloak` |
+
+Neu doi realm name, phai doi ca 2 bien tren.
+
+### 14.2. Logic Verify Token
+
+Gateway doc header:
+
+```text
+Authorization: Bearer <access_token>
+```
+
+Sau do:
+
+1. Lay token sau chuoi `Bearer `.
+2. Tai public keys tu JWKS endpoint cua Keycloak.
+3. Verify chu ky JWT.
+4. Verify issuer la `http://localhost:8080/realms/DOAN`.
+5. Gan payload vao `req.user`.
+6. Cho request di tiep neu token hop le.
+
+Neu khong co token:
+
+```json
+{
+  "error": "missing_token",
+  "message": "Missing Authorization: Bearer token"
+}
+```
+
+Neu token sai, het han, sai issuer, hoac verify that bai:
+
+```json
+{
+  "error": "invalid_token"
+}
+```
+
+### 14.3. Logic Phan Quyen Role
+
+Endpoint `/api/admin` dung role check:
+
+```text
+realm_access.roles
+```
+
+Token phai co role:
+
+```text
+admin
+```
+
+Neu token hop le nhung khong co role `admin`, gateway tra:
+
+```json
+{
+  "error": "forbidden",
+  "message": "Required role: admin"
+}
+```
+
+### 14.4. Restart Gateway Sau Khi Sua Code
+
+Neu sua `backend/server.js`, restart container:
+
+```powershell
+docker compose restart backend
+```
+
+Xem log gateway:
+
+```powershell
+docker compose logs backend
+```
+
+Neu gateway chay dung, log co:
+
+```text
+Gateway running on port 3000
+```
+
+Neu can rebuild lai moi truong tu dau:
+
+```powershell
+docker compose down
+docker compose up -d
+```
+
+Khong dung `docker compose down -v` neu khong muon mat data Keycloak.
+
+### 14.5. Test Gateway Public
+
+Endpoint public khong can token:
+
+```powershell
+Invoke-RestMethod http://localhost:3000/api/public
+```
+
+Ket qua dung:
+
+```json
+{
+  "message": "Public API is working!"
+}
+```
+
+### 14.6. Test Gateway Chan Request Khong Co Token
+
+Goi endpoint secure khong kem token:
+
+```powershell
+Invoke-RestMethod http://localhost:3000/api/secure
+```
+
+Ket qua mong doi la bi chan voi HTTP `401`.
+
+PowerShell se hien loi, nhung body loi tu gateway la:
+
+```json
+{
+  "error": "missing_token",
+  "message": "Missing Authorization: Bearer token"
+}
+```
+
+### 14.7. Test Gateway Voi Access Token
+
+Lay access token bang Authorization Code Flow hoac Client Credentials Flow, sau do gan vao bien:
+
+```powershell
+$token = "<PASTE_ACCESS_TOKEN_O_DAY>"
+```
+
+Goi endpoint secure:
+
+```powershell
+Invoke-RestMethod `
+  -Uri "http://localhost:3000/api/secure" `
+  -Headers @{ Authorization = "Bearer $token" }
+```
+
+Ket qua dung:
+
+```json
+{
+  "message": "Secure API is working!",
+  "user": "...",
+  "issuer": "http://localhost:8080/realms/DOAN"
+}
+```
+
+### 14.8. Test Gateway Voi Role `admin`
+
+Dang nhap bang user co role `admin`, vi du:
+
+```text
+admin1 / 123456
+```
+
+Lay access token moi, gan vao bien:
+
+```powershell
+$adminToken = "<PASTE_ADMIN_ACCESS_TOKEN_O_DAY>"
+```
+
+Goi:
+
+```powershell
+Invoke-RestMethod `
+  -Uri "http://localhost:3000/api/admin" `
+  -Headers @{ Authorization = "Bearer $adminToken" }
+```
+
+Ket qua dung:
+
+```json
+{
+  "message": "Admin API is working!",
+  "user": "admin1"
+}
+```
+
+Neu dung token cua `user1` chi co role `user`, ket qua dung la HTTP `403`.
+
+### 14.9. Cach Kiem Tra Token Co Role Hay Khong
+
+Copy `access_token` va paste vao:
+
+```text
+https://jwt.io
+```
+
+Trong payload, tim:
+
+```json
+{
+  "realm_access": {
+    "roles": [
+      "admin"
+    ]
+  }
+}
+```
+
+Neu khong thay role `admin`, kiem tra lai:
+
+```text
+Keycloak Admin -> realm DOAN -> Users -> admin1 -> Role mapping
+```
+
+### 14.10. Loi Thuong Gap Khi Test Gateway
+
+| Loi | Nguyen nhan | Cach xu ly |
+| --- | --- | --- |
+| `missing_token` | Khong gui header Authorization | Them `Authorization: Bearer <token>` |
+| `invalid_token` | Token sai, het han, sai issuer, hoac JWKS khong lay duoc | Lay token moi va kiem tra `KEYCLOAK_ISSUER` |
+| `forbidden` | Token hop le nhung thieu role | Gan role dung cho user trong Keycloak |
+| `connect ECONNREFUSED keycloak:8080` | Gateway khong ket noi duoc Keycloak trong Docker network | Kiem tra container `keycloak` co `Up` khong |
+| `issuer claim mismatch` | Realm/issuer trong token khong khop config gateway | Dung realm `DOAN` va URL `http://localhost:8080/realms/DOAN` |
+
+### 14.11. Viec Can Lam Tiep Cho Gateway
+
+Phan hien tai da du de demo JWT verification va role-based access control.
+
+Viec tiep theo co the lam:
+
+1. Tach middleware auth ra file rieng, vi du `backend/middleware/auth.js`.
+2. Them route mau cho service that cua nhom.
+3. Them `.env` de quan ly config thay vi hardcode trong `docker-compose.yml`.
+4. Them Dockerfile rieng cho backend thay vi dung truc tiep `node:18-alpine`.
+5. Them health check endpoint, vi du `GET /health`.
+6. Them Kubernetes manifests cho gateway.
+
+## 15. Trang Thai Kubernetes
 
 Hien tai Docker Compose da la moi truong chay chinh.
 
@@ -467,7 +752,7 @@ k8s/
 
 Ket luan: Kubernetes chua phai phan chay chinh trong repo hien tai. Nhom tiep theo co the tiep tuc bang cach viet manifests va build image backend.
 
-## 15. Checklist Cho Thanh Vien Test
+## 16. Checklist Cho Thanh Vien Test
 
 Lam theo thu tu:
 
@@ -484,7 +769,7 @@ Lam theo thu tu:
 11. Goi `GET /api/secure` bang Bearer token
 12. Goi `GET /api/admin` bang token cua user co role `admin`
 
-## 16. Lenh Don Dep
+## 17. Lenh Don Dep
 
 Dung container:
 
@@ -499,4 +784,3 @@ docker compose down -v
 ```
 
 Can than: `docker compose down -v` se xoa data Keycloak, bao gom realm, users, clients da tao.
-
