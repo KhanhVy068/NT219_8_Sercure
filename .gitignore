@@ -16,3 +16,7 @@ x86/
 *.log
 
 postgres_data/
+# ES256 key files (không commit khóa)
+*.pem
+backend/es256-private.pem
+backend/es256-public.pem
