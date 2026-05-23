@@ -1,0 +1,21 @@
+{
+  "name": "hmac-request-verification",
+  "startedAt": "2026-05-23T09:32:12.236Z",
+  "endedAt": "2026-05-23T09:32:27.255Z",
+  "durationSec": 15.019,
+  "totalRequests": 7547,
+  "requestsPerSec": 502.5,
+  "latencyMs": {
+    "avg": 19.884,
+    "min": 6.339,
+    "p50": 18.789,
+    "p95": 28.988,
+    "p99": 42.522,
+    "max": 63.17
+  },
+  "statusCounts": {
+    "200": 7547
+  },
+  "concurrency": 10,
+  "includesJwtVerify": true
+}

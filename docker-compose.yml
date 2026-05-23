@@ -39,6 +39,20 @@ services:
       - internal
       - public
 
+  vault:
+    image: hashicorp/vault:1.16
+    container_name: vault
+    cap_add:
+      - IPC_LOCK
+    environment:
+      VAULT_DEV_ROOT_TOKEN_ID: root
+      VAULT_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
+    command: server -dev
+    ports:
+      - "8200:8200"
+    networks:
+      - public
+
   # Backend test (tạm thời)
   backend:
     build: ./backend  
@@ -49,6 +63,13 @@ services:
     environment:
       KEYCLOAK_ISSUER: ${KEYCLOAK_ISSUER}
       KEYCLOAK_JWKS_URI: ${KEYCLOAK_JWKS_URI}
+      VAULT_ADDR: http://vault:8200
+      VAULT_TOKEN: root
+      VAULT_ENABLED: "true"
+      DEMO_JWT_ISSUER: http://localhost:3000/demo-idp
+      DEMO_JWT_AUDIENCE: secure-api
+    depends_on:
+      - vault
     networks:
       - public
 

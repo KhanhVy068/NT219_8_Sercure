@@ -1,21 +1,33 @@
 const express = require('express');
 const auth = require('./middleware/auth');
 const fs = require('fs');
-const ES256_PRIVATE_KEY = fs.readFileSync('./es256-private.pem', 'utf8');
-console.log(auth);
-console.log("AUTH:", auth);
-console.log("authenticateToken:", typeof auth.authenticateToken);
-console.log("requireRealmRole:", typeof auth.requireRealmRole);
-console.log("CALL RESULT:", typeof auth.requireRealmRole?.('admin'));
+const path = require('path');
+const crypto = require('crypto');
 const cors = require('cors');
 const helmet = require('helmet');
+const keyStore = require('./services/keyStore');
+const introspectionStore = require('./services/introspectionStore');
+const oauthRoutes = require('./routes/oauthRoutes');
+const introspection = require('./middleware/introspection');
+const requestLogger = require('./middleware/requestLogger');
+const auditLog = require('./services/auditLog');
+const metrics = require('./services/metrics');
 
+const DEMO_JWT_ISSUER = process.env.DEMO_JWT_ISSUER || 'http://localhost:3000/demo-idp';
+const DEMO_JWT_AUDIENCE = process.env.DEMO_JWT_AUDIENCE || 'secure-api';
+const ES256_PRIVATE_KEY_PATH =
+  process.env.ES256_PRIVATE_KEY_PATH || path.join(__dirname, 'es256-private.pem');
+const HMAC_TIMESTAMP_WINDOW_MS = Number(process.env.HMAC_TIMESTAMP_WINDOW_MS || 60000);
+const PORT = Number(process.env.PORT || 3000);
+const usedNonces = new Map();
 
 const app = express();
 
 app.use(cors());
 app.use(helmet());
 app.use(express.json());
+app.use(requestLogger);
+app.use('/oauth', oauthRoutes);
 
 app.get('/health', (req, res) => {
   res.status(200).json({
@@ -80,28 +92,62 @@ app.get('/api/myinfo', auth.authenticateToken, (req, res) => {
 // ========== DEMO TOKEN CHO HS256 VÀ ES256 ==========
 
 // 1. Tạo token HS256 demo
-app.post('/api/demo/token/hs256', (req, res) => {
-  const jwt = require('jsonwebtoken');
-  const secret = 'khóa-bi-mật-24byte-cho-hs256!!';
+app.post('/api/demo/token/hs256', async (req, res) => {
+  const jose = await import('jose');
   const payload = {
     sub: 'demo-user-hs256',
     preferred_username: 'demouser',
-    realm_access: { roles: ['user'] }
+    realm_access: { roles: ['user'] },
+    scope: 'read write',
+    client_id: 'gateway-client'
   };
-  const token = jwt.sign(payload, secret, { algorithm: 'HS256', expiresIn: '1h' });
-  res.json({ algorithm: 'HS256', token: token });
+  const key = keyStore.getSigningKey('HS256');
+  const token = await new jose.SignJWT(payload)
+    .setProtectedHeader({ alg: 'HS256', kid: key.kid })
+    .setIssuer(DEMO_JWT_ISSUER)
+    .setAudience(DEMO_JWT_AUDIENCE)
+    .setIssuedAt()
+    .setExpirationTime('1h')
+    .sign(new TextEncoder().encode(key.secret));
+  introspectionStore.registerToken(token, jose.decodeJwt(token));
+  res.json({ algorithm: 'HS256', kid: key.kid, token: token });
+});
+
+app.get('/metrics', (req, res) => {
+  res.json(metrics.snapshot());
+});
+
+app.get('/api/secure-introspection', introspection.introspectToken, (req, res) => {
+  res.json({
+    message: 'Secure API validated by token introspection',
+    user: req.user.preferred_username,
+    client_id: req.user.client_id,
+    scope: req.user.scope,
+  });
 });
 
 // 2. Tạo token ES256 demo
-app.post('/api/demo/token/es256', (req, res) => {
- const jwt = require('jsonwebtoken');
+app.post('/api/demo/token/es256', async (req, res) => {
+  const jose = await import('jose');
+  const ES256_PRIVATE_KEY = fs.readFileSync(ES256_PRIVATE_KEY_PATH, 'utf8');
   const payload = {
     sub: 'demo-user-es256',
     preferred_username: 'demouser',
-    realm_access: { roles: ['user'] }
+    realm_access: { roles: ['user'] },
+    scope: 'read write',
+    client_id: 'gateway-client'
   };
-  const token = jwt.sign(payload, ES256_PRIVATE_KEY, { algorithm: 'ES256', expiresIn: '1h' });
-  res.json({ algorithm: 'ES256', token: token });
+  const key = keyStore.getSigningKey('ES256');
+  const privateKey = await jose.importPKCS8(key.privateKey || ES256_PRIVATE_KEY, 'ES256');
+  const token = await new jose.SignJWT(payload)
+    .setProtectedHeader({ alg: 'ES256', kid: key.kid })
+    .setIssuer(DEMO_JWT_ISSUER)
+    .setAudience(DEMO_JWT_AUDIENCE)
+    .setIssuedAt()
+    .setExpirationTime('1h')
+    .sign(privateKey);
+  introspectionStore.registerToken(token, jose.decodeJwt(token));
+  res.json({ algorithm: 'ES256', kid: key.kid, token: token });
 });
 
 // 3. Test JWT algorithm detection
@@ -119,69 +165,160 @@ app.get('/api/crypto/jwt-algorithm', auth.authenticateToken, (req, res) => {
 
 //==phần thêm HMAC== //
 
+function stableStringify(value) {
+  if (value === null || typeof value !== 'object') {
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map(stableStringify).join(',')}]`;
+  }
+  return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${stableStringify(value[key])}`).join(',')}}`;
+}
+
+function sha256Hex(value) {
+  return crypto.createHash('sha256').update(value).digest('hex');
+}
+
+function canonicalRequest(method, pathName, timestamp, nonce, body) {
+  const bodyHash = sha256Hex(stableStringify(body || {}));
+  return [method.toUpperCase(), pathName, timestamp, nonce, bodyHash].join('\n');
+}
+
+function createHmacSignature(method, pathName, timestamp, nonce, body, secret = keyStore.getHmacSecret()) {
+  return crypto
+    .createHmac('sha256', secret)
+    .update(canonicalRequest(method, pathName, timestamp, nonce, body))
+    .digest('hex');
+}
+
+function timingSafeHexEqual(left, right) {
+  if (!/^[0-9a-f]+$/i.test(left || '') || !/^[0-9a-f]+$/i.test(right || '')) {
+    return false;
+  }
+  const leftBuffer = Buffer.from(left, 'hex');
+  const rightBuffer = Buffer.from(right, 'hex');
+  return leftBuffer.length === rightBuffer.length && crypto.timingSafeEqual(leftBuffer, rightBuffer);
+}
+
+function pruneExpiredNonces(now = Date.now()) {
+  for (const [nonce, expiresAt] of usedNonces.entries()) {
+    if (expiresAt <= now) {
+      usedNonces.delete(nonce);
+    }
+  }
+}
+
 //  API 1: Tạo chữ ký HMAC (cho client gửi request) NGƯỜI GỬI
 app.post('/api/crypto/hmac-sign', (req, res) => {
-  const { message, secret } = req.body;
+  const { body, message, method, path: requestPath, timestamp, nonce, secret } = req.body;
+  const payload = body || message;
   
-  if (!message) {
+  if (!payload) {
     return res.status(400).json({ error: 'missing_message' });
   }
-  
-  const crypto = require('crypto');
-  const hmac = crypto.createHmac('sha256', secret || 'default-secret-key');
-  hmac.update(JSON.stringify(message));
-  const signature = hmac.digest('hex');
+
+  const signedTimestamp = String(timestamp || Date.now());
+  const signedNonce = nonce || crypto.randomUUID();
+  const signedMethod = method || 'POST';
+  const signedPath = requestPath || '/api/crypto/hmac-verify';
+  const signature = createHmacSignature(
+    signedMethod,
+    signedPath,
+    signedTimestamp,
+    signedNonce,
+    payload,
+    secret || keyStore.getHmacSecret()
+  );
   
   res.json({
     message: 'HMAC signature created',
     signature: signature,
-    algorithm: 'HMAC-SHA256'
+    algorithm: 'HMAC-SHA256',
+    headers: {
+      'x-timestamp': signedTimestamp,
+      'x-nonce': signedNonce,
+      'x-signature': signature
+    },
+    canonical: canonicalRequest(signedMethod, signedPath, signedTimestamp, signedNonce, payload)
+  });
+});
+
+app.get('/api/crypto/key-status', (req, res) => {
+  res.json(keyStore.getState());
+});
+
+app.post('/api/crypto/reload-keys', async (req, res) => {
+  const started = process.hrtime.bigint();
+  await keyStore.refreshKeys();
+  const durationMs = Number(process.hrtime.bigint() - started) / 1e6;
+  metrics.inc('vault_reload_total');
+  metrics.observe('vault_reload_duration_ms', durationMs);
+  auditLog.write('vault_reload', { duration_ms: Number(durationMs.toFixed(3)) });
+  res.json({
+    reloaded: true,
+    state: keyStore.getState(),
   });
 });
 // API 2: Verify chữ ký HMAC (gateway kiểm tra) NGƯỜI NHẬN
 // Verify HMAC signature (gateway kiểm tra request có bị sửa không)
-app.post('/api/crypto/hmac-verify', (req, res) => {
-  const { message, signature } = req.body;
+app.post('/api/crypto/hmac-verify', auth.authenticateToken, (req, res) => {
   const timestamp = req.headers['x-timestamp'];
   const nonce = req.headers['x-nonce'];
-  
-  // 1. Kiểm tra timestamp (chống replay attack - gửi lại request cũ)
-  if (timestamp) {
-    const requestTime = parseInt(timestamp);
-    const currentTime = Date.now();
-    if (Math.abs(currentTime - requestTime) > 60000) { // 60 giây
-      return res.status(401).json({
-        error: 'request_expired',
-        message: 'Timestamp quá cũ, request đã hết hạn'
-      });
-    }
-  }
-  
-  // 2. Kiểm tra nonce (chống replay - mỗi request có 1 mã riêng)
-  if (nonce) {
-    // Trong thực tế, cần lưu nonce đã dùng vào Redis để kiểm tra
-    console.log(`Nonce received: ${nonce}`);
-  }
-  
-  // 3. Verify chữ ký
-  if (!message || !signature) {
+  const signature = req.headers['x-signature'];
+  const payload = req.body.body || req.body.message;
+
+  if (!timestamp || !nonce || !signature) {
     return res.status(400).json({
-      error: 'missing_data',
-      message: 'Thiếu message hoặc signature'
+      error: 'missing_signature_headers',
+      message: 'Thiếu x-timestamp, x-nonce hoặc x-signature'
     });
   }
   
-  const crypto = require('crypto');
-  const secret = req.headers['x-secret'] || 'default-secret-key';
-  const hmac = crypto.createHmac('sha256', secret);
-  hmac.update(JSON.stringify(message));
-  const expectedSignature = hmac.digest('hex');
+  // 1. Kiểm tra timestamp (chống replay attack - gửi lại request cũ)
+  const requestTime = Number(timestamp);
+  const currentTime = Date.now();
+  if (!Number.isFinite(requestTime) || Math.abs(currentTime - requestTime) > HMAC_TIMESTAMP_WINDOW_MS) {
+    return res.status(401).json({
+      error: 'request_expired',
+      message: 'Timestamp quá cũ, request đã hết hạn'
+    });
+  }
   
-  if (expectedSignature === signature) {
+  // 2. Kiểm tra nonce (chống replay - mỗi request có 1 mã riêng)
+  pruneExpiredNonces(currentTime);
+  if (usedNonces.has(nonce)) {
+    metrics.inc('replay_detected_total');
+    auditLog.write('replay_detected', { nonce, path: req.path });
+    return res.status(401).json({
+      error: 'replay_detected',
+      message: 'Nonce đã được sử dụng, nghi ngờ replay attack'
+    });
+  }
+  
+  // 3. Verify chữ ký
+  if (!payload) {
+    return res.status(400).json({
+      error: 'missing_data',
+      message: 'Thiếu message/body để verify HMAC'
+    });
+  }
+  
+  const expectedSignature = createHmacSignature(
+    req.method,
+    req.path,
+    timestamp,
+    nonce,
+    payload,
+    keyStore.getHmacSecret()
+  );
+  
+  if (timingSafeHexEqual(expectedSignature, signature)) {
+    usedNonces.set(nonce, currentTime + HMAC_TIMESTAMP_WINDOW_MS);
     res.json({
       success: true,
       message: 'HMAC signature hợp lệ, request không bị sửa đổi',
-      verified: true
+      verified: true,
+      user: req.user.preferred_username || req.user.sub
     });
   } else {
     res.status(401).json({
@@ -195,8 +332,8 @@ app.post('/api/crypto/hmac-verify', (req, res) => {
 async function startServer() {
   await auth.initializeJWT();
 
-  app.listen(3000, () => {
-    console.log('Gateway running on port 3000');
+  app.listen(PORT, () => {
+    console.log(`Gateway running on port ${PORT}`);
   });
 }
 
