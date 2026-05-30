@@ -26,6 +26,14 @@ spec:
           value: "http://keycloak:8080/realms/DOAN"
         - name: KEYCLOAK_JWKS_URI
           value: "http://keycloak:8080/realms/DOAN/protocol/openid-connect/certs"
+        - name: RATE_LIMIT_WINDOW_MS
+          value: "60000"
+        - name: RATE_LIMIT_MAX
+          value: "120"
+        - name: MAX_BODY_BYTES
+          value: "1048576"
+        - name: AUDIT_LOG_STDOUT
+          value: "true"
         livenessProbe:
           httpGet:
             path: /health

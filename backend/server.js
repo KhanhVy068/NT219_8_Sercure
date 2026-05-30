@@ -10,6 +10,8 @@ const introspectionStore = require('./services/introspectionStore');
 const oauthRoutes = require('./routes/oauthRoutes');
 const introspection = require('./middleware/introspection');
 const requestLogger = require('./middleware/requestLogger');
+const tracing = require('./middleware/tracing');
+const securityHardening = require('./middleware/securityHardening');
 const auditLog = require('./services/auditLog');
 const metrics = require('./services/metrics');
 
@@ -25,7 +27,12 @@ const app = express();
 
 app.use(cors());
 app.use(helmet());
-app.use(express.json());
+app.use(tracing);
+app.use(securityHardening.hardeningHeaders);
+app.use(securityHardening.rateLimit);
+app.use(securityHardening.rejectLargeBody);
+app.use(express.json({ limit: process.env.JSON_BODY_LIMIT || '1mb' }));
+app.use(securityHardening.requireJsonForWrites);
 app.use(requestLogger);
 app.use('/oauth', oauthRoutes);
 
@@ -33,7 +40,9 @@ app.get('/health', (req, res) => {
   res.status(200).json({
     status: 'healthy',
     timestamp: new Date().toISOString(),
-    uptime: process.uptime()
+    uptime: process.uptime(),
+    traceId: req.trace?.traceId,
+    vault: keyStore.getState().vault,
   });
 });
 
@@ -117,6 +126,10 @@ app.get('/metrics', (req, res) => {
   res.json(metrics.snapshot());
 });
 
+app.get('/metrics/prometheus', (req, res) => {
+  res.type('text/plain; version=0.0.4').send(metrics.toPrometheus());
+});
+
 app.get('/api/secure-introspection', introspection.introspectToken, (req, res) => {
   res.json({
     message: 'Secure API validated by token introspection',
@@ -129,7 +142,6 @@ app.get('/api/secure-introspection', introspection.introspectToken, (req, res) =
 // 2. Tạo token ES256 demo
 app.post('/api/demo/token/es256', async (req, res) => {
   const jose = await import('jose');
-  const ES256_PRIVATE_KEY = fs.readFileSync(ES256_PRIVATE_KEY_PATH, 'utf8');
   const payload = {
     sub: 'demo-user-es256',
     preferred_username: 'demouser',
@@ -138,7 +150,8 @@ app.post('/api/demo/token/es256', async (req, res) => {
     client_id: 'gateway-client'
   };
   const key = keyStore.getSigningKey('ES256');
-  const privateKey = await jose.importPKCS8(key.privateKey || ES256_PRIVATE_KEY, 'ES256');
+  const privatePem = key.privateKey || fs.readFileSync(ES256_PRIVATE_KEY_PATH, 'utf8');
+  const privateKey = await jose.importPKCS8(privatePem, 'ES256');
   const token = await new jose.SignJWT(payload)
     .setProtectedHeader({ alg: 'ES256', kid: key.kid })
     .setIssuer(DEMO_JWT_ISSUER)

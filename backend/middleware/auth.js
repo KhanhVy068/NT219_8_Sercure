@@ -103,6 +103,7 @@ async function authenticateToken(req, res, next) {
       kid: header.kid,
       sub: payload.sub,
       duration_ms: Number(durationMs.toFixed(3)),
+      trace_id: req.trace?.traceId,
     });
     next();
   } catch (error) {
@@ -112,6 +113,7 @@ async function authenticateToken(req, res, next) {
     auditLog.write('jwt_verify_fail', {
       reason: error.message,
       duration_ms: Number(durationMs.toFixed(3)),
+      trace_id: req.trace?.traceId,
     });
     return res.status(401).json({
       error: 'invalid_token',

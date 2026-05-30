@@ -1,5 +1,6 @@
 const path = require('path');
 const vault = require('./vaultService');
+const metrics = require('./metrics');
 
 const HS256_PATH = process.env.VAULT_HS256_PATH || 'secret/jwt/hs256';
 const ES256_PATH = process.env.VAULT_ES256_PATH || 'secret/jwt/es256';
@@ -28,6 +29,8 @@ function normalizeKeyMap(secretData, algorithm) {
   const currentKid = secretData.currentKid;
   return {
     currentKid,
+    canaryKid: secretData.canaryKid || null,
+    canaryPercent: Number(secretData.canaryPercent || 0),
     keys: Object.fromEntries(
       Object.entries(keys).map(([kid, key]) => [
         kid,
@@ -122,9 +125,15 @@ async function initializeKeyStore() {
 
 function getSigningKey(algorithm) {
   const state = algorithm === 'HS256' ? hs256State : es256State;
-  const key = state?.keys?.[state.currentKid];
+  const canaryPercent = Math.max(0, Math.min(100, Number(state?.canaryPercent || 0)));
+  const useCanary = state?.canaryKid && canaryPercent > 0 && Math.random() * 100 < canaryPercent;
+  const kid = useCanary ? state.canaryKid : state?.currentKid;
+  const key = state?.keys?.[kid];
   if (!isUsableKey(key, false)) {
     throw new Error(`No active signing key for ${algorithm}`);
+  }
+  if (useCanary) {
+    metrics.inc('canary_token_issued_total', { alg: algorithm, kid });
   }
   return key;
 }
@@ -148,6 +157,8 @@ function getState() {
     audience: DEMO_JWT_AUDIENCE,
     hs256: {
       currentKid: hs256State?.currentKid,
+      canaryKid: hs256State?.canaryKid,
+      canaryPercent: hs256State?.canaryPercent || 0,
       kids: Object.fromEntries(
         Object.entries(hs256State?.keys || {}).map(([kid, key]) => [
           kid,
@@ -157,6 +168,8 @@ function getState() {
     },
     es256: {
       currentKid: es256State?.currentKid,
+      canaryKid: es256State?.canaryKid,
+      canaryPercent: es256State?.canaryPercent || 0,
       kids: Object.fromEntries(
         Object.entries(es256State?.keys || {}).map(([kid, key]) => [
           kid,

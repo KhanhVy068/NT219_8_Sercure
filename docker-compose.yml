@@ -68,6 +68,10 @@ services:
       VAULT_ENABLED: "true"
       DEMO_JWT_ISSUER: http://localhost:3000/demo-idp
       DEMO_JWT_AUDIENCE: secure-api
+      RATE_LIMIT_WINDOW_MS: 60000
+      RATE_LIMIT_MAX: 120
+      MAX_BODY_BYTES: 1048576
+      AUDIT_LOG_STDOUT: "true"
     depends_on:
       - vault
     networks:

@@ -53,6 +53,46 @@ function snapshot() {
   };
 }
 
+function escapeLabelValue(value) {
+  return String(value).replace(/\\/g, '\\\\').replace(/\n/g, '\\n').replace(/"/g, '\\"');
+}
+
+function labelsToPrometheus(labels = {}) {
+  const entries = Object.entries(labels);
+  if (!entries.length) {
+    return '';
+  }
+  return `{${entries.map(([key, value]) => `${key}="${escapeLabelValue(value)}"`).join(',')}}`;
+}
+
+function prometheusName(name) {
+  return name.replace(/[^a-zA-Z0-9_:]/g, '_');
+}
+
+function toPrometheus() {
+  const lines = [];
+
+  for (const counter of counters.values()) {
+    const name = prometheusName(counter.name);
+    lines.push(`# TYPE ${name} counter`);
+    lines.push(`${name}${labelsToPrometheus(counter.labels)} ${counter.value}`);
+  }
+
+  for (const histogram of snapshot().histograms) {
+    const baseName = prometheusName(histogram.name);
+    const labels = labelsToPrometheus(histogram.labels);
+    lines.push(`# TYPE ${baseName} summary`);
+    lines.push(`${baseName}_count${labels} ${histogram.count}`);
+    lines.push(`${baseName}_avg${labels} ${histogram.avg}`);
+    lines.push(`${baseName}_p50${labels} ${histogram.p50}`);
+    lines.push(`${baseName}_p95${labels} ${histogram.p95}`);
+    lines.push(`${baseName}_p99${labels} ${histogram.p99}`);
+    lines.push(`${baseName}_max${labels} ${histogram.max}`);
+  }
+
+  return `${lines.join('\n')}\n`;
+}
+
 function labelsKey(name, labels) {
   return `${name}:${JSON.stringify(labels)}`;
 }
@@ -61,4 +101,5 @@ module.exports = {
   inc,
   observe,
   snapshot,
+  toPrometheus,
 };
