@@ -1,0 +1,2 @@
+name,totalRequests,requestsPerSec,avg,p50,p95,p99,max,concurrency,durationSec
+introspection-validation,19397,640.74,155.358,145.833,225.969,296.709,350.525,100,30.273

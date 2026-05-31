@@ -1,0 +1,22 @@
+{
+  "name": "hs256-local-verify",
+  "startedAt": "2026-05-31T15:00:21.396Z",
+  "endedAt": "2026-05-31T15:00:51.778Z",
+  "durationSec": 30.382,
+  "totalRequests": 18454,
+  "requestsPerSec": 607.4,
+  "latencyMs": {
+    "avg": 163.465,
+    "min": 13.428,
+    "p50": 152.987,
+    "p95": 260.305,
+    "p99": 349.596,
+    "max": 411.58
+  },
+  "statusCounts": {
+    "429": 18454
+  },
+  "concurrency": 100,
+  "algorithm": "HS256",
+  "scenario": "alg-compare"
+}

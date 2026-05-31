@@ -1,0 +1,23 @@
+{
+  "name": "es256-local-verify",
+  "startedAt": "2026-05-31T15:00:52.396Z",
+  "endedAt": "2026-05-31T15:01:22.523Z",
+  "durationSec": 30.127,
+  "totalRequests": 14510,
+  "requestsPerSec": 481.63,
+  "latencyMs": {
+    "avg": 207.183,
+    "min": 23.792,
+    "p50": 200.451,
+    "p95": 327.663,
+    "p99": 385.077,
+    "max": 514.174
+  },
+  "statusCounts": {
+    "401": 1000,
+    "429": 13510
+  },
+  "concurrency": 100,
+  "algorithm": "ES256",
+  "scenario": "alg-compare"
+}

@@ -1,0 +1,24 @@
+{
+  "name": "introspection-validation",
+  "startedAt": "2026-05-31T15:06:59.655Z",
+  "endedAt": "2026-05-31T15:07:29.793Z",
+  "durationSec": 30.138,
+  "totalRequests": 19564,
+  "requestsPerSec": 649.15,
+  "latencyMs": {
+    "avg": 153.667,
+    "min": 14.156,
+    "p50": 146.678,
+    "p95": 212.43,
+    "p99": 270.61,
+    "max": 348.61
+  },
+  "statusCounts": {
+    "200": 585,
+    "429": 18979
+  },
+  "concurrency": 100,
+  "scenario": "introspection-cache",
+  "cacheStrategy": "cache-on",
+  "cacheTtlMs": "5000"
+}

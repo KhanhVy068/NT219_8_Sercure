@@ -30,6 +30,7 @@ async function main() {
   const concurrency = Number(arg('concurrency', 20));
   const warmupCount = Number(arg('warmup', 20));
   const secret = process.env.HMAC_SECRET || 'demo-hmac-secret-32bytes-minimum';
+  const scenario = arg('scenario', process.env.BENCH_SCENARIO || 'baseline');
 
   const tokenResponse = await getJson(`${baseUrl}/api/demo/token/hs256`, { method: 'POST' });
   const token = tokenResponse.body.token;
@@ -58,7 +59,7 @@ async function main() {
     durationSec,
     concurrency,
     requestFn,
-    extra: { includesJwtVerify: true },
+    extra: { includesJwtVerify: true, scenario },
   });
   const files = saveResult(result);
   console.log(JSON.stringify({ result, files }, null, 2));

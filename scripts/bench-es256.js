@@ -5,6 +5,7 @@ async function main() {
   const durationSec = Number(arg('duration', 15));
   const concurrency = Number(arg('concurrency', 20));
   const warmupCount = Number(arg('warmup', 20));
+  const scenario = arg('scenario', process.env.BENCH_SCENARIO || 'baseline');
 
   const tokenResponse = await getJson(`${baseUrl}/api/demo/token/es256`, { method: 'POST' });
   const token = tokenResponse.body.token;
@@ -22,7 +23,7 @@ async function main() {
     durationSec,
     concurrency,
     requestFn,
-    extra: { algorithm: 'ES256', kid: tokenResponse.body.kid },
+    extra: { algorithm: 'ES256', kid: tokenResponse.body.kid, scenario },
   });
   const files = saveResult(result);
   console.log(JSON.stringify({ result, files }, null, 2));

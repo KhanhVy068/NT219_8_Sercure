@@ -5,6 +5,7 @@ async function main() {
   const durationSec = Number(arg('duration', 10));
   const concurrency = Number(arg('concurrency', 2));
   const warmupCount = Number(arg('warmup', 3));
+  const scenario = arg('scenario', process.env.BENCH_SCENARIO || 'baseline');
 
   const requestFn = async () => {
     const response = await fetch(`${baseUrl}/api/crypto/reload-keys`, { method: 'POST' });
@@ -18,7 +19,7 @@ async function main() {
     durationSec,
     concurrency,
     requestFn,
-    extra: { warning: 'Do not run high concurrency reload in production' },
+    extra: { scenario, warning: 'Do not run high concurrency reload in production' },
   });
   const files = saveResult(result);
   console.log(JSON.stringify({ result, files }, null, 2));

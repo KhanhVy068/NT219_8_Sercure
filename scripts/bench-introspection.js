@@ -5,6 +5,11 @@ async function main() {
   const durationSec = Number(arg('duration', 15));
   const concurrency = Number(arg('concurrency', 20));
   const warmupCount = Number(arg('warmup', 20));
+  const scenario = arg('scenario', process.env.BENCH_SCENARIO || 'baseline');
+  const cacheStrategy = arg(
+    'cache',
+    Number(process.env.INTROSPECTION_CACHE_TTL_MS || 5000) > 0 ? 'cache-on' : 'cache-off'
+  );
 
   const tokenResponse = await getJson(`${baseUrl}/api/demo/token/hs256`, { method: 'POST' });
   const token = tokenResponse.body.token;
@@ -22,7 +27,11 @@ async function main() {
     durationSec,
     concurrency,
     requestFn,
-    extra: { cacheTtlMs: process.env.INTROSPECTION_CACHE_TTL_MS || '5000' },
+    extra: {
+      scenario,
+      cacheStrategy,
+      cacheTtlMs: process.env.INTROSPECTION_CACHE_TTL_MS || '5000',
+    },
   });
   const files = saveResult(result);
   console.log(JSON.stringify({ result, files }, null, 2));
