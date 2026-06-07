@@ -1,0 +1,28 @@
+﻿BaseUrl: http://localhost:3001
+Keycloak: http://localhost:8080
+Docker services:
+NAME          IMAGE                            COMMAND                  SERVICE    CREATED          STATUS          PORTS
+backend-api   nt219_8_sercure-backend          "docker-entrypoint.sΓÇª"   backend    21 minutes ago   Up 21 minutes   0.0.0.0:3001->3000/tcp, [::]:3001->3000/tcp
+keycloak      quay.io/keycloak/keycloak:26.1   "/opt/keycloak/bin/kΓÇª"   keycloak   30 minutes ago   Up 30 minutes   0.0.0.0:8080->8080/tcp, [::]:8080->8080/tcp
+keycloak-db   postgres:16-alpine               "docker-entrypoint.sΓÇª"   postgres   30 minutes ago   Up 30 minutes   5432/tcp
+vault         hashicorp/vault:1.16             "docker-entrypoint.sΓÇª"   vault      30 minutes ago   Up 30 minutes   0.0.0.0:8200->8200/tcp, [::]:8200->8200/tcp
+
+Health: HTTP 200 {"status":"healthy","timestamp":"2026-06-02T08:00:51.201Z","uptime":1280.483747669,"traceId":"90509c921976bdf26edb565ec42fc971","vault":{"enabled":true,"addr":"http://vault:8200","cachedPaths":["secret/jwt/es256","secret/jwt/hs256","secret/hmac/api"],"lastError":null}}
+Key status HS256 kid: hs256-v1
+
+Keycloak user alice token:
+issuer=http://localhost:8080/realms/DOAN
+roles=default-roles-doan,offline_access,uma_authorization,user
+
+Normal user token:
+alg=HS256, kid=hs256-v1, roles=user
+/api/admin with user token => HTTP 403
+
+Forged HS256 token:
+alg=HS256, kid=hs256-v1, roles=admin
+/api/crypto/jwt-algorithm with forged token => HTTP 200
+/api/admin with forged admin token => HTTP 200
+
+Negative controls:
+bad kid token => HTTP 401
+alg=none token => HTTP 401

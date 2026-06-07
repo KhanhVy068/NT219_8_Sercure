@@ -1,0 +1,10 @@
+﻿{
+    "algorithm":  "HS256",
+    "kid":  "hs256-v1",
+    "username":  "demouser",
+    "roles":  [
+                  "user"
+              ],
+    "issuer":  "http://localhost:3001/demo-idp",
+    "audience":  "secure-api"
+}

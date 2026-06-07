@@ -1,0 +1,16 @@
+timeout: 10m
+ignore-unfixed: true
+severity:
+  - HIGH
+  - CRITICAL
+scanners:
+  - vuln
+  - secret
+  - misconfig
+skip-dirs:
+  - backend/node_modules
+  - results
+  - outputs
+  - .git
+skip-files:
+  - .env

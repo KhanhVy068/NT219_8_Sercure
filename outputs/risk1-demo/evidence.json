@@ -1,0 +1,63 @@
+﻿{
+    "generatedAt":  "2026-06-02T15:00:50",
+    "baseUrl":  "http://localhost:3001",
+    "keycloakUrl":  "http://localhost:8080",
+    "steps":  [
+                  {
+                      "name":  "Gateway health",
+                      "method":  "GET",
+                      "uri":  "http://localhost:3001/health",
+                      "status":  200,
+                      "ok":  true,
+                      "body":  "{\"status\":\"healthy\",\"timestamp\":\"2026-06-02T08:00:51.201Z\",\"uptime\":1280.483747669,\"traceId\":\"90509c921976bdf26edb565ec42fc971\",\"vault\":{\"enabled\":true,\"addr\":\"http://vault:8200\",\"cachedPaths\":[\"secret/jwt/es256\",\"secret/jwt/hs256\",\"secret/hmac/api\"],\"lastError\":null}}"
+                  },
+                  {
+                      "name":  "Gateway key status",
+                      "method":  "GET",
+                      "uri":  "http://localhost:3001/api/crypto/key-status",
+                      "status":  200,
+                      "ok":  true,
+                      "body":  "{\"issuer\":\"http://localhost:3001/demo-idp\",\"audience\":\"secure-api\",\"hs256\":{\"currentKid\":\"hs256-v1\",\"canaryKid\":null,\"canaryPercent\":0,\"kids\":{\"hs256-v1\":{\"status\":\"active\",\"expiresAt\":1780472526}}},\"es256\":{\"currentKid\":\"es256-v1\",\"canaryKid\":null,\"canaryPercent\":0,\"kids\":{\"es256-v1\":{\"status\":\"active\",\"expiresAt\":1780472526}}},\"hmac\":{\"currentKid\":\"hmac-v1\",\"loaded\":true},\"vault\":{\"enabled\":true,\"addr\":\"http://vault:8200\",\"cachedPaths\":[\"secret/jwt/es256\",\"secret/jwt/hs256\",\"secret/hmac/api\"],\"lastError\":null}}"
+                  },
+                  {
+                      "name":  "User token calls /api/admin",
+                      "method":  "GET",
+                      "uri":  "http://localhost:3001/api/admin",
+                      "status":  403,
+                      "ok":  false,
+                      "body":  ""
+                  },
+                  {
+                      "name":  "Forged admin token calls /api/crypto/jwt-algorithm",
+                      "method":  "GET",
+                      "uri":  "http://localhost:3001/api/crypto/jwt-algorithm",
+                      "status":  200,
+                      "ok":  true,
+                      "body":  "{\"message\":\"JWT validation successful\",\"algorithm\":\"HS256\",\"payload\":{\"username\":\"attacker\",\"roles\":[\"admin\"]}}"
+                  },
+                  {
+                      "name":  "Forged admin token calls /api/admin",
+                      "method":  "GET",
+                      "uri":  "http://localhost:3001/api/admin",
+                      "status":  200,
+                      "ok":  true,
+                      "body":  "{\"message\":\"Admin API is working!\",\"user\":\"attacker\"}"
+                  },
+                  {
+                      "name":  "Bad kid token is blocked",
+                      "method":  "GET",
+                      "uri":  "http://localhost:3001/api/crypto/jwt-algorithm",
+                      "status":  401,
+                      "ok":  false,
+                      "body":  ""
+                  },
+                  {
+                      "name":  "alg=none token is blocked",
+                      "method":  "GET",
+                      "uri":  "http://localhost:3001/api/crypto/jwt-algorithm",
+                      "status":  401,
+                      "ok":  false,
+                      "body":  ""
+                  }
+              ]
+}

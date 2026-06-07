@@ -1,7 +1,8 @@
 {
   "name": "backend",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "check:syntax": "node --check server.js && node --check middleware/auth.js && node --check middleware/introspection.js && node --check middleware/requestLogger.js && node --check middleware/securityHardening.js && node --check middleware/tracing.js && node --check routes/oauthRoutes.js && node --check services/auditLog.js && node --check services/introspectionStore.js && node --check services/keyStore.js && node --check services/metrics.js && node --check services/revocationStore.js && node --check services/vaultService.js"
   },
   "dependencies": {
     "cors": "^2.8.6",

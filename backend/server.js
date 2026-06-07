@@ -32,6 +32,23 @@ app.use(securityHardening.hardeningHeaders);
 app.use(securityHardening.rateLimit);
 app.use(securityHardening.rejectLargeBody);
 app.use(express.json({ limit: process.env.JSON_BODY_LIMIT || '1mb' }));
+app.use((err, req, res, next) => {
+  if (err?.type === 'entity.too.large') {
+    metrics.inc('request_rejected_total', { reason: 'body_too_large' });
+    auditLog.write('request_rejected', {
+      reason: 'body_too_large',
+      method: req.method,
+      path: req.path,
+      content_length: Number(req.headers['content-length'] || 0),
+      trace_id: req.trace?.traceId,
+    });
+    return res.status(413).json({
+      error: 'body_too_large',
+      message: `Request body exceeds ${process.env.MAX_BODY_BYTES || 1048576} bytes`,
+    });
+  }
+  return next(err);
+});
 app.use(securityHardening.requireJsonForWrites);
 app.use(requestLogger);
 app.use('/oauth', oauthRoutes);

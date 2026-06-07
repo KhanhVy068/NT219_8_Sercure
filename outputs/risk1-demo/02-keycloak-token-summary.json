@@ -1,0 +1,12 @@
+﻿{
+    "issuer":  "http://localhost:8080/realms/DOAN",
+    "username":  "alice",
+    "roles":  [
+                  "default-roles-doan",
+                  "offline_access",
+                  "uma_authorization",
+                  "user"
+              ],
+    "tokenType":  "Bearer",
+    "expiresIn":  300
+}

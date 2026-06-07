@@ -1,0 +1,77 @@
+stages:
+  - validate
+  - scan
+  - build
+  - image_scan
+  - deploy
+
+variables:
+  IMAGE_NAME: secure-api-gateway
+  DOCKER_TLS_CERTDIR: ""
+
+validate:
+  stage: validate
+  image: node:18-alpine
+  before_script:
+    - apk add --no-cache docker-cli docker-cli-compose
+  script:
+    - npm ci --prefix backend
+    - npm run check:syntax --prefix backend
+    - npm audit --prefix backend --audit-level=high
+    - docker compose config
+
+trivy_fs_scan:
+  stage: scan
+  image:
+    name: aquasec/trivy:0.56.2
+    entrypoint: [""]
+  script:
+    - trivy fs --config .trivy.yaml --format table --exit-code 1 .
+
+build_backend_image:
+  stage: build
+  image: docker:27
+  services:
+    - docker:27-dind
+  script:
+    - docker build -t "$IMAGE_NAME:$CI_COMMIT_SHA" ./backend
+    - docker save "$IMAGE_NAME:$CI_COMMIT_SHA" -o backend-image.tar
+  artifacts:
+    paths:
+      - backend-image.tar
+    expire_in: 1 day
+
+trivy_image_scan:
+  stage: image_scan
+  image:
+    name: aquasec/trivy:0.56.2
+    entrypoint: [""]
+  services:
+    - docker:27-dind
+  dependencies:
+    - build_backend_image
+  before_script:
+    - apk add --no-cache docker-cli
+  script:
+    - docker load -i backend-image.tar
+    - trivy image --config .trivy.yaml --format table --exit-code 1 "$IMAGE_NAME:$CI_COMMIT_SHA"
+
+deploy_kubernetes:
+  stage: deploy
+  image:
+    name: bitnami/kubectl:1.31
+    entrypoint: [""]
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main" && $KUBECONFIG_B64'
+      when: manual
+    - when: never
+  script:
+    - mkdir -p "$HOME/.kube"
+    - echo "$KUBECONFIG_B64" | base64 -d > "$HOME/.kube/config"
+    - kubectl apply -f k8s/namespace.yml
+    - kubectl apply -f k8s/postgres.yml
+    - kubectl apply -f k8s/keycloak.yml
+    - kubectl apply -f k8s/backend.yml
+    - kubectl apply -f k8s/kong.yml
+    - kubectl rollout status deployment/backend -n api-gateway --timeout=120s
+    - kubectl rollout status deployment/kong -n api-gateway --timeout=120s

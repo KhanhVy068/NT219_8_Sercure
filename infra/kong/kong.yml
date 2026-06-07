@@ -1,0 +1,68 @@
+_format_version: "3.0"
+_transform: true
+
+services:
+  - name: protected-express-backend
+    url: http://backend:3000
+    connect_timeout: 5000
+    read_timeout: 30000
+    write_timeout: 30000
+    retries: 2
+    routes:
+      - name: protected-cloud-api-routes
+        paths:
+          - /
+        strip_path: false
+        preserve_host: true
+        protocols:
+          - http
+    plugins:
+      - name: correlation-id
+        config:
+          header_name: x-request-id
+          generator: uuid
+          echo_downstream: true
+      - name: rate-limiting
+        config:
+          minute: 120
+          policy: local
+          fault_tolerant: true
+          hide_client_headers: false
+      - name: request-size-limiting
+        config:
+          allowed_payload_size: 1
+          size_unit: megabytes
+      - name: cors
+        config:
+          origins:
+            - "*"
+          methods:
+            - GET
+            - POST
+            - PUT
+            - PATCH
+            - DELETE
+            - OPTIONS
+          headers:
+            - Authorization
+            - Content-Type
+            - x-timestamp
+            - x-nonce
+            - x-signature
+            - x-request-id
+          exposed_headers:
+            - x-request-id
+            - traceparent
+            - x-ratelimit-limit-minute
+            - x-ratelimit-remaining-minute
+          credentials: false
+          max_age: 3600
+
+plugins:
+  - name: prometheus
+    config:
+      per_consumer: false
+      status_code_metrics: true
+      latency_metrics: true
+      bandwidth_metrics: true
+      upstream_health_metrics: true
