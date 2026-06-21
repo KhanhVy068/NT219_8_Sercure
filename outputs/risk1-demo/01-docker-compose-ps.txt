@@ -1,5 +1,0 @@
-﻿NAME          IMAGE                            COMMAND                  SERVICE    CREATED          STATUS          PORTS
-backend-api   nt219_8_sercure-backend          "docker-entrypoint.sΓÇª"   backend    21 minutes ago   Up 21 minutes   0.0.0.0:3001->3000/tcp, [::]:3001->3000/tcp
-keycloak      quay.io/keycloak/keycloak:26.1   "/opt/keycloak/bin/kΓÇª"   keycloak   30 minutes ago   Up 30 minutes   0.0.0.0:8080->8080/tcp, [::]:8080->8080/tcp
-keycloak-db   postgres:16-alpine               "docker-entrypoint.sΓÇª"   postgres   30 minutes ago   Up 30 minutes   5432/tcp
-vault         hashicorp/vault:1.16             "docker-entrypoint.sΓÇª"   vault      30 minutes ago   Up 30 minutes   0.0.0.0:8200->8200/tcp, [::]:8200->8200/tcp
