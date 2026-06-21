@@ -1,2 +1,0 @@
-name,totalRequests,requestsPerSec,avg,p50,p95,p99,max,concurrency,durationSec
-es256-local-verify,7045,468.57,21.308,19.474,32.379,50.037,95.931,10,15.035
