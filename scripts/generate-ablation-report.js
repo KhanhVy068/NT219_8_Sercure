@@ -1,7 +1,10 @@
 const fs = require('fs');
 const path = require('path');
 
-const inputPath = path.join(__dirname, '..', 'results', 'week9', 'aggregate-summary.json');
+const benchmarkDir = process.env.BENCH_RESULTS_DIR
+  ? path.resolve(process.env.BENCH_RESULTS_DIR)
+  : path.join(__dirname, '..', 'results', 'week9');
+const inputPath = path.join(benchmarkDir, 'aggregate-summary.json');
 const outputDir = path.join(__dirname, '..', 'results', 'week11');
 const outputPath = path.join(outputDir, 'ablation-report.md');
 

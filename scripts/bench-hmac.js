@@ -1,5 +1,7 @@
 const crypto = require('crypto');
-const { arg, warmup, runBenchmark, getJson, saveResult } = require('./bench-common');
+const {
+  arg, warmup, runBenchmark, getJson, saveResult, benchmarkHeaders, assertExpectedStatuses, assertResponse,
+} = require('./bench-common');
 
 function stableStringify(value) {
   if (value === null || typeof value !== 'object') {
@@ -32,7 +34,11 @@ async function main() {
   const secret = process.env.HMAC_SECRET || 'demo-hmac-secret-32bytes-minimum';
   const scenario = arg('scenario', process.env.BENCH_SCENARIO || 'baseline');
 
-  const tokenResponse = await getJson(`${baseUrl}/api/demo/token/hs256`, { method: 'POST' });
+  const tokenResponse = await getJson(`${baseUrl}/api/demo/token/hs256`, {
+    method: 'POST',
+    headers: benchmarkHeaders(),
+  });
+  assertResponse(tokenResponse, 'HMAC token creation');
   const token = tokenResponse.body.token;
   const payload = { amount: 100000, to: 'alice' };
 
@@ -40,13 +46,13 @@ async function main() {
     const signed = signRequest(payload, secret);
     const response = await fetch(`${baseUrl}/api/crypto/hmac-verify`, {
       method: 'POST',
-      headers: {
+      headers: benchmarkHeaders({
         Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json',
         'x-timestamp': signed.timestamp,
         'x-nonce': signed.nonce,
         'x-signature': signed.signature,
-      },
+      }),
       body: JSON.stringify({ body: payload }),
     });
     await response.arrayBuffer();
@@ -61,6 +67,7 @@ async function main() {
     requestFn,
     extra: { includesJwtVerify: true, scenario },
   });
+  assertExpectedStatuses(result);
   const files = saveResult(result);
   console.log(JSON.stringify({ result, files }, null, 2));
 }

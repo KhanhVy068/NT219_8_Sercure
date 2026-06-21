@@ -86,7 +86,9 @@ async function getJson(url, options = {}) {
 }
 
 function saveResult(result) {
-  const outDir = path.join(__dirname, '..', 'results', 'week9');
+  const outDir = process.env.BENCH_RESULTS_DIR
+    ? path.resolve(process.env.BENCH_RESULTS_DIR)
+    : path.join(__dirname, '..', 'results', 'week9');
   fs.mkdirSync(outDir, { recursive: true });
   const safeName = result.name.replace(/[^a-z0-9_-]/gi, '-').toLowerCase();
   const timestamp = new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14);
@@ -111,10 +113,42 @@ function saveResult(result) {
   return { jsonPath, csvPath };
 }
 
+function benchmarkHeaders(extra = {}) {
+  return {
+    'x-gateway-token': process.env.BENCH_GATEWAY_TOKEN || 'demo-gateway-internal-token',
+    'x-gateway-identity': 'benchmark-runner',
+    ...extra,
+  };
+}
+
+function assertExpectedStatuses(result, expected = [200]) {
+  const unexpected = Object.entries(result.statusCounts || {})
+    .filter(([status, count]) => count > 0 && !expected.includes(Number(status)));
+
+  if (unexpected.length) {
+    const summary = unexpected.map(([status, count]) => `${status}=${count}`).join(', ');
+    throw new Error(
+      `Benchmark ${result.name} is invalid: unexpected responses (${summary}). ` +
+      'Fix authentication/rate limiting before using this result.'
+    );
+  }
+}
+
+function assertResponse(response, label, expected = [200]) {
+  if (!expected.includes(response.status)) {
+    throw new Error(
+      `${label} preflight failed with HTTP ${response.status}: ${JSON.stringify(response.body)}`
+    );
+  }
+}
+
 module.exports = {
   arg,
   warmup,
   runBenchmark,
   getJson,
   saveResult,
+  benchmarkHeaders,
+  assertExpectedStatuses,
+  assertResponse,
 };

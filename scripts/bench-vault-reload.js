@@ -1,4 +1,6 @@
-const { arg, warmup, runBenchmark, saveResult } = require('./bench-common');
+const {
+  arg, warmup, runBenchmark, saveResult, benchmarkHeaders, assertExpectedStatuses,
+} = require('./bench-common');
 
 async function main() {
   const baseUrl = arg('url', process.env.BASE_URL || 'http://localhost:3000');
@@ -8,7 +10,10 @@ async function main() {
   const scenario = arg('scenario', process.env.BENCH_SCENARIO || 'baseline');
 
   const requestFn = async () => {
-    const response = await fetch(`${baseUrl}/api/crypto/reload-keys`, { method: 'POST' });
+    const response = await fetch(`${baseUrl}/api/crypto/reload-keys`, {
+      method: 'POST',
+      headers: benchmarkHeaders(),
+    });
     await response.arrayBuffer();
     return response.status;
   };
@@ -21,6 +26,7 @@ async function main() {
     requestFn,
     extra: { scenario, warning: 'Do not run high concurrency reload in production' },
   });
+  assertExpectedStatuses(result);
   const files = saveResult(result);
   console.log(JSON.stringify({ result, files }, null, 2));
 }

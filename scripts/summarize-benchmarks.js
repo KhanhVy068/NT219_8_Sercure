@@ -1,14 +1,16 @@
 const fs = require('fs');
 const path = require('path');
 
-const dir = path.join(__dirname, '..', 'results', 'week9');
+const dir = process.env.BENCH_RESULTS_DIR
+  ? path.resolve(process.env.BENCH_RESULTS_DIR)
+  : path.join(__dirname, '..', 'results', 'week9');
 if (!fs.existsSync(dir)) {
   console.error(`No benchmark directory found: ${dir}`);
   process.exit(1);
 }
 
 const rows = fs.readdirSync(dir)
-  .filter((file) => file.endsWith('.json'))
+  .filter((file) => file.endsWith('.json') && file !== 'aggregate-summary.json')
   .map((file) => {
     const result = JSON.parse(fs.readFileSync(path.join(dir, file), 'utf8'));
     return {

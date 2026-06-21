@@ -1,4 +1,5 @@
 import csv
+import os
 import sys
 from pathlib import Path
 
@@ -9,8 +10,8 @@ except ImportError:
     sys.exit(1)
 
 ROOT = Path(__file__).resolve().parents[1]
-SUMMARY = ROOT / "results" / "week9" / "summary.csv"
-OUT_DIR = ROOT / "results" / "week9"
+OUT_DIR = Path(os.environ.get("BENCH_RESULTS_DIR", ROOT / "results" / "week9")).resolve()
+SUMMARY = OUT_DIR / "summary.csv"
 
 if not SUMMARY.exists():
     print(f"Missing {SUMMARY}. Run: node scripts\\summarize-benchmarks.js")

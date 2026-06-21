@@ -1,4 +1,6 @@
-const { arg, warmup, runBenchmark, getJson, saveResult } = require('./bench-common');
+const {
+  arg, warmup, runBenchmark, getJson, saveResult, benchmarkHeaders, assertExpectedStatuses, assertResponse,
+} = require('./bench-common');
 
 async function main() {
   const baseUrl = arg('url', process.env.BASE_URL || 'http://localhost:3000');
@@ -11,15 +13,20 @@ async function main() {
     Number(process.env.INTROSPECTION_CACHE_TTL_MS || 5000) > 0 ? 'cache-on' : 'cache-off'
   );
 
-  const tokenResponse = await getJson(`${baseUrl}/api/demo/token/hs256`, { method: 'POST' });
+  const tokenResponse = await getJson(`${baseUrl}/api/demo/token/hs256`, {
+    method: 'POST',
+    headers: benchmarkHeaders(),
+  });
+  assertResponse(tokenResponse, 'Introspection token creation');
   const token = tokenResponse.body.token;
-  const headers = { Authorization: `Bearer ${token}` };
+  const headers = benchmarkHeaders({ Authorization: `Bearer ${token}` });
 
   const requestFn = async () => {
     const response = await fetch(`${baseUrl}/api/secure-introspection`, { headers });
     await response.arrayBuffer();
     return response.status;
   };
+  assertResponse(await getJson(`${baseUrl}/api/secure-introspection`, { headers }), 'Introspection verify');
 
   await warmup(requestFn, warmupCount);
   const result = await runBenchmark({
@@ -33,6 +40,7 @@ async function main() {
       cacheTtlMs: process.env.INTROSPECTION_CACHE_TTL_MS || '5000',
     },
   });
+  assertExpectedStatuses(result);
   const files = saveResult(result);
   console.log(JSON.stringify({ result, files }, null, 2));
 }

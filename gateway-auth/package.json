@@ -1,0 +1,11 @@
+{
+  "name": "gateway-auth",
+  "scripts": {
+    "start": "node server.js",
+    "check:syntax": "node --check server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "jose": "^6.2.3"
+  }
+}

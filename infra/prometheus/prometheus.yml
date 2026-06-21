@@ -9,8 +9,38 @@ scrape_configs:
       - targets:
           - kong:8001
 
+  - job_name: gateway-auth
+    metrics_path: /metrics/prometheus
+    static_configs:
+      - targets:
+          - gateway-auth:4000
+
   - job_name: express-secure-gateway
     metrics_path: /metrics/prometheus
     static_configs:
       - targets:
           - backend:3000
+
+  - job_name: backend-domain-services
+    metrics_path: /metrics/prometheus
+    static_configs:
+      - targets:
+          - user-service:3000
+          - payment-service:3000
+          - inventory-service:3000
+          - analytics-service:3000
+
+  - job_name: keycloak
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - keycloak:9000
+
+  - job_name: database-exporters
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - user-db-exporter:9187
+          - payment-db-exporter:9187
+          - inventory-db-exporter:9187
+          - analytics-db-exporter:9187

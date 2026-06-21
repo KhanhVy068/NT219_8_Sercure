@@ -2,8 +2,8 @@ _format_version: "3.0"
 _transform: true
 
 services:
-  - name: protected-express-backend
-    url: http://backend:3000
+  - name: zero-trust-gateway-auth
+    url: http://gateway-auth:4000
     connect_timeout: 5000
     read_timeout: 30000
     write_timeout: 30000
@@ -32,6 +32,18 @@ services:
         config:
           allowed_payload_size: 1
           size_unit: megabytes
+      - name: request-transformer
+        config:
+          remove:
+            headers:
+              - x-user-id
+              - x-roles
+              - x-client-id
+              - x-authenticated-user-id
+              - x-authenticated-client-id
+              - x-authenticated-roles
+              - x-authenticated-scopes
+              - x-authenticated-subject
       - name: cors
         config:
           origins:
@@ -50,6 +62,7 @@ services:
             - x-nonce
             - x-signature
             - x-request-id
+            - ngrok-skip-browser-warning
           exposed_headers:
             - x-request-id
             - traceparent

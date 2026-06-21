@@ -1,22 +1,63 @@
-
-
 services:
   postgres:
     image: postgres:16-alpine
     container_name: keycloak-db
     environment:
       POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_USER: ${POSTGRES_USER} 
+      POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
       - internal
-    # healthcheck:          
-    #   test: ["CMD-SHELL", "pg_isready -U keycloak"]
-    #   interval: 10s
-    #   timeout: 5s
-    #   retries: 5
+
+  user-db:
+    image: postgres:16-alpine
+    container_name: user-db
+    environment:
+      POSTGRES_DB: userdb
+      POSTGRES_USER: user_app
+      POSTGRES_PASSWORD: user_pw_demo
+    volumes:
+      - user_db_data:/var/lib/postgresql/data
+    networks:
+      - user-data
+
+  payment-db:
+    image: postgres:16-alpine
+    container_name: payment-db
+    environment:
+      POSTGRES_DB: paymentdb
+      POSTGRES_USER: payment_app
+      POSTGRES_PASSWORD: payment_pw_demo
+    volumes:
+      - payment_db_data:/var/lib/postgresql/data
+    networks:
+      - payment-data
+
+  inventory-db:
+    image: postgres:16-alpine
+    container_name: inventory-db
+    environment:
+      POSTGRES_DB: inventorydb
+      POSTGRES_USER: inventory_app
+      POSTGRES_PASSWORD: inventory_pw_demo
+    volumes:
+      - inventory_db_data:/var/lib/postgresql/data
+    networks:
+      - inventory-data
+
+  analytics-db:
+    image: postgres:16-alpine
+    container_name: analytics-db
+    environment:
+      POSTGRES_DB: analyticsdb
+      POSTGRES_USER: analytics_app
+      POSTGRES_PASSWORD: analytics_pw_demo
+    volumes:
+      - analytics_db_data:/var/lib/postgresql/data
+    networks:
+      - analytics-data
 
   keycloak:
     image: quay.io/keycloak/keycloak:26.1
@@ -29,15 +70,20 @@ services:
       KC_DB_PASSWORD: ${KC_DB_PASSWORD}
       KC_BOOTSTRAP_ADMIN_USERNAME: ${KC_BOOTSTRAP_ADMIN_USERNAME}
       KC_BOOTSTRAP_ADMIN_PASSWORD: ${KC_BOOTSTRAP_ADMIN_PASSWORD}
-      KC_HOSTNAME: localhost
+      KC_HOSTNAME: https://shower-trickily-equity.ngrok-free.dev
+      KC_PROXY_HEADERS: xforwarded
       KC_HTTP_ENABLED: "true"
+      KC_METRICS_ENABLED: "true"
     ports:
-      - "8080:8080"
+      - "${KEYCLOAK_PORT:-8081}:8080"
+    expose:
+      - "9000"
     depends_on:
-      - postgres           
+      - postgres
     networks:
       - internal
       - public
+      - management
 
   vault:
     image: hashicorp/vault:1.16
@@ -52,8 +98,28 @@ services:
       - "8200:8200"
     networks:
       - public
+      - management
 
-  # Firewall and independent monitoring layer
+  vault-seed:
+    image: hashicorp/vault:1.16
+    container_name: vault-seed
+    environment:
+      VAULT_ADDR: http://vault:8200
+      VAULT_TOKEN: root
+    command: >
+      sh -c "
+      sleep 3 &&
+      vault kv put secret/db/user-service username=user_app password=user_pw_demo lease_ttl=1h &&
+      vault kv put secret/db/payment-service username=payment_app password=payment_pw_demo lease_ttl=1h &&
+      vault kv put secret/db/inventory-service username=inventory_app password=inventory_pw_demo lease_ttl=1h &&
+      vault kv put secret/db/analytics-service username=analytics_app password=analytics_pw_demo lease_ttl=1h &&
+      vault kv put secret/gateway/internal token=demo-gateway-internal-token
+      "
+    depends_on:
+      - vault
+    networks:
+      - management
+
   firewall:
     image: nginx:1.27-alpine
     container_name: gateway-firewall
@@ -85,9 +151,147 @@ services:
     volumes:
       - ./infra/kong/kong.yml:/kong/declarative/kong.yml:ro
     depends_on:
-      - backend
+      - gateway-auth
     networks:
       - public
+      - private-app
+      - management
+
+  gateway-auth:
+    build: ./gateway-auth
+    container_name: gateway-auth
+    expose:
+      - "4000"
+    environment:
+      KEYCLOAK_ISSUER: https://shower-trickily-equity.ngrok-free.dev/realms/DOAN
+      KEYCLOAK_JWKS_URI: http://keycloak:8080/realms/DOAN/protocol/openid-connect/certs
+      DEMO_JWT_ISSUER: http://localhost:${BACKEND_PORT:-3000}/demo-idp
+      DEMO_JWT_AUDIENCE: secure-api
+      HS256_SECRET: khoa-bi-mat-24byte-cho-hs256!!
+      GATEWAY_INTERNAL_TOKEN: demo-gateway-internal-token
+      LEGACY_BACKEND_URL: http://backend:3000
+      USER_SERVICE_URL: http://user-service:3000
+      PAYMENT_SERVICE_URL: http://payment-service:3000
+      INVENTORY_SERVICE_URL: http://inventory-service:3000
+      ANALYTICS_SERVICE_URL: http://analytics-service:3000
+    depends_on:
+      - backend
+      - user-service
+      - payment-service
+      - inventory-service
+      - analytics-service
+    networks:
+      - private-app
+      - management
+
+  backend:
+    build: ./backend
+    container_name: backend-api
+    working_dir: /app
+    expose:
+      - "3000"
+    environment:
+      KEYCLOAK_ISSUER: https://shower-trickily-equity.ngrok-free.dev/realms/DOAN
+      KEYCLOAK_JWKS_URI: http://keycloak:8080/realms/DOAN/protocol/openid-connect/certs
+      VAULT_ADDR: http://vault:8200
+      VAULT_TOKEN: root
+      VAULT_ENABLED: "true"
+      GATEWAY_INTERNAL_TOKEN: demo-gateway-internal-token
+      DEMO_JWT_ISSUER: http://localhost:${BACKEND_PORT:-3000}/demo-idp
+      DEMO_JWT_AUDIENCE: secure-api
+      RATE_LIMIT_WINDOW_MS: 60000
+      RATE_LIMIT_MAX: 20
+      MAX_BODY_BYTES: 1048576
+      AUDIT_LOG_STDOUT: "true"
+    depends_on:
+      - vault-seed
+    networks:
+      - private-app
+      - management
+
+  user-service:
+    build: ./services/domain-service
+    container_name: user-service
+    expose:
+      - "3000"
+    environment:
+      SERVICE_NAME: user-service
+      RESOURCE_NAME: user
+      GATEWAY_INTERNAL_TOKEN: demo-gateway-internal-token
+      DB_HOST: user-db
+      DB_NAME: userdb
+      DB_USER: user_app
+      VAULT_DB_SECRET_PATH: secret/db/user-service
+    depends_on:
+      - user-db
+      - vault-seed
+    networks:
+      - private-app
+      - user-data
+      - management
+
+  payment-service:
+    build: ./services/domain-service
+    container_name: payment-service
+    expose:
+      - "3000"
+    environment:
+      SERVICE_NAME: payment-service
+      RESOURCE_NAME: payment
+      GATEWAY_INTERNAL_TOKEN: demo-gateway-internal-token
+      DB_HOST: payment-db
+      DB_NAME: paymentdb
+      DB_USER: payment_app
+      VAULT_DB_SECRET_PATH: secret/db/payment-service
+    depends_on:
+      - payment-db
+      - vault-seed
+    networks:
+      - private-app
+      - payment-data
+      - management
+
+  inventory-service:
+    build: ./services/domain-service
+    container_name: inventory-service
+    expose:
+      - "3000"
+    environment:
+      SERVICE_NAME: inventory-service
+      RESOURCE_NAME: inventory
+      GATEWAY_INTERNAL_TOKEN: demo-gateway-internal-token
+      DB_HOST: inventory-db
+      DB_NAME: inventorydb
+      DB_USER: inventory_app
+      VAULT_DB_SECRET_PATH: secret/db/inventory-service
+    depends_on:
+      - inventory-db
+      - vault-seed
+    networks:
+      - private-app
+      - inventory-data
+      - management
+
+  analytics-service:
+    build: ./services/domain-service
+    container_name: analytics-service
+    expose:
+      - "3000"
+    environment:
+      SERVICE_NAME: analytics-service
+      RESOURCE_NAME: analytics
+      GATEWAY_INTERNAL_TOKEN: demo-gateway-internal-token
+      DB_HOST: analytics-db
+      DB_NAME: analyticsdb
+      DB_USER: analytics_app
+      VAULT_DB_SECRET_PATH: secret/db/analytics-service
+    depends_on:
+      - analytics-db
+      - vault-seed
+    networks:
+      - private-app
+      - analytics-data
+      - management
 
   prometheus:
     image: prom/prometheus:v2.55.1
@@ -102,9 +306,15 @@ services:
       - prometheus_data:/prometheus
     depends_on:
       - kong
+      - gateway-auth
       - backend
+      - user-service
+      - payment-service
+      - inventory-service
+      - analytics-service
     networks:
-      - public
+      - private-app
+      - management
 
   grafana:
     image: grafana/grafana:11.3.1
@@ -121,40 +331,81 @@ services:
     depends_on:
       - prometheus
     networks:
-      - public
+      - management
 
-  # Protected backend/resource API
-  backend:
-    build: ./backend  
-    container_name: backend-api
-    working_dir: /app
-    expose:
-      - "3000"
+  user-db-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.15.0
+    container_name: user-db-exporter
     environment:
-      KEYCLOAK_ISSUER: ${KEYCLOAK_ISSUER}
-      KEYCLOAK_JWKS_URI: ${KEYCLOAK_JWKS_URI}
-      VAULT_ADDR: http://vault:8200
-      VAULT_TOKEN: root
-      VAULT_ENABLED: "true"
-      DEMO_JWT_ISSUER: http://localhost:${BACKEND_PORT:-3000}/demo-idp
-      DEMO_JWT_AUDIENCE: secure-api
-      RATE_LIMIT_WINDOW_MS: 60000
-      RATE_LIMIT_MAX: 20
-      MAX_BODY_BYTES: 1048576
-      AUDIT_LOG_STDOUT: "true"
+      DATA_SOURCE_NAME: postgresql://user_app:user_pw_demo@user-db:5432/userdb?sslmode=disable
     depends_on:
-      - vault
+      - user-db
     networks:
-      - public
+      - user-data
+      - management
+
+  payment-db-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.15.0
+    container_name: payment-db-exporter
+    environment:
+      DATA_SOURCE_NAME: postgresql://payment_app:payment_pw_demo@payment-db:5432/paymentdb?sslmode=disable
+    depends_on:
+      - payment-db
+    networks:
+      - payment-data
+      - management
+
+  inventory-db-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.15.0
+    container_name: inventory-db-exporter
+    environment:
+      DATA_SOURCE_NAME: postgresql://inventory_app:inventory_pw_demo@inventory-db:5432/inventorydb?sslmode=disable
+    depends_on:
+      - inventory-db
+    networks:
+      - inventory-data
+      - management
+
+  analytics-db-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.15.0
+    container_name: analytics-db-exporter
+    environment:
+      DATA_SOURCE_NAME: postgresql://analytics_app:analytics_pw_demo@analytics-db:5432/analyticsdb?sslmode=disable
+    depends_on:
+      - analytics-db
+    networks:
+      - analytics-data
+      - management
 
 networks:
   public:
     driver: bridge
+  private-app:
+    driver: bridge
+    internal: true
+  management:
+    driver: bridge
+  user-data:
+    driver: bridge
+    internal: true
+  payment-data:
+    driver: bridge
+    internal: true
+  inventory-data:
+    driver: bridge
+    internal: true
+  analytics-data:
+    driver: bridge
+    internal: true
   internal:
     driver: bridge
     internal: true
 
 volumes:
   postgres_data:
+  user_db_data:
+  payment_db_data:
+  inventory_db_data:
+  analytics_db_data:
   prometheus_data:
   grafana_data:

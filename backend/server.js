@@ -21,6 +21,7 @@ const ES256_PRIVATE_KEY_PATH =
   process.env.ES256_PRIVATE_KEY_PATH || path.join(__dirname, 'es256-private.pem');
 const HMAC_TIMESTAMP_WINDOW_MS = Number(process.env.HMAC_TIMESTAMP_WINDOW_MS || 60000);
 const PORT = Number(process.env.PORT || 3000);
+const GATEWAY_INTERNAL_TOKEN = process.env.GATEWAY_INTERNAL_TOKEN || 'demo-gateway-internal-token';
 const usedNonces = new Map();
 
 const app = express();
@@ -52,6 +53,40 @@ app.use((err, req, res, next) => {
 app.use(securityHardening.requireJsonForWrites);
 app.use(requestLogger);
 app.use('/oauth', oauthRoutes);
+
+function requireGatewayIdentity(req, res, next) {
+  if (
+    req.path === '/api/demo/token/hs256' ||
+    req.path === '/api/demo/token/es256'
+  ) {
+    return next();
+  }
+
+  if (req.headers['x-gateway-token'] !== GATEWAY_INTERNAL_TOKEN) {
+    metrics.inc('request_rejected_total', { reason: 'missing_gateway_identity' });
+    auditLog.write('request_rejected', {
+      reason: 'missing_gateway_identity',
+      method: req.method,
+      path: req.path,
+      trace_id: req.trace?.traceId,
+    });
+    return res.status(403).json({
+      error: 'forbidden',
+      message: 'Business API accepts requests only from the trusted gateway layer',
+    });
+  }
+
+  req.gatewayIdentity = {
+    source: req.headers['x-gateway-identity'],
+    subject: req.headers['x-authenticated-subject'],
+    clientId: req.headers['x-authenticated-client-id'],
+    roles: String(req.headers['x-authenticated-roles'] || '').split(',').filter(Boolean),
+    scopes: String(req.headers['x-authenticated-scopes'] || '').split(' ').filter(Boolean),
+  };
+  return next();
+}
+
+app.use('/api', requireGatewayIdentity);
 
 app.get('/health', (req, res) => {
   res.status(200).json({
@@ -289,8 +324,7 @@ app.post('/api/crypto/reload-keys', async (req, res) => {
     state: keyStore.getState(),
   });
 });
-// API 2: Verify chữ ký HMAC (gateway kiểm tra) NGƯỜI NHẬN
-// Verify HMAC signature (gateway kiểm tra request có bị sửa không)
+// API 2: Backend verifies HMAC for M2M requests. Kong only forwards HMAC headers.
 app.post('/api/crypto/hmac-verify', auth.authenticateToken, (req, res) => {
   const timestamp = req.headers['x-timestamp'];
   const nonce = req.headers['x-nonce'];

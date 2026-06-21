@@ -1,7 +1,9 @@
 const fs = require('fs');
 const path = require('path');
 
-const RESULTS_DIR = path.join(__dirname, '..', 'results', 'week9');
+const RESULTS_DIR = process.env.BENCH_RESULTS_DIR
+  ? path.resolve(process.env.BENCH_RESULTS_DIR)
+  : path.join(__dirname, '..', 'results', 'week9');
 const OUTPUT_CSV = path.join(RESULTS_DIR, 'aggregate-summary.csv');
 const OUTPUT_JSON = path.join(RESULTS_DIR, 'aggregate-summary.json');
 
@@ -49,7 +51,8 @@ function readResults() {
         max: number(data.latencyMs?.max),
         totalRequests: number(data.totalRequests),
         status200: number(data.statusCounts?.['200']),
-        errors: number(data.statusCounts?.error),
+        errors: Object.entries(data.statusCounts || {}).reduce((sum, [status, count]) =>
+          status === '200' ? sum : sum + number(count), 0),
       };
     });
 }
